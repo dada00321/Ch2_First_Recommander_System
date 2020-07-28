@@ -2,7 +2,6 @@ import os
 import json
 import random
 import math
-import time
 
 class FirstRec():
     def __init__(self, file_path, seed, k_users, n_items, test_num=17770):
@@ -71,9 +70,6 @@ class FirstRec():
             print("dataset 拆分完成！\n")
             print(" repetitive_count:", repetitive_count, "\n") # 4634 
             
-            #print("training set:", train, sep="\n")
-            #print("test set:", test, sep="\n")
-            
             if not os.path.exists("res"): os.mkdir("res")
             print("正在保存 dataset 為 JSON 檔案...")
             json.dump(train, open("res/train.json","w"))
@@ -98,7 +94,7 @@ class FirstRec():
     rating_1: 用戶1的評分紀錄 E.g. {"movie_1": 3, "movie_2": 5}
     rating_2: 用戶2的評分紀錄 E.g. {"movie_1": 4, "movie_2": 3}
     """
-    def pearson(self,rating1,rating2):
+    def get_pearson_r(self, rating1, rating2):
         sum_xy = 0
         sum_x = 0
         sum_y = 0
@@ -122,34 +118,51 @@ class FirstRec():
         if denominator == 0:
             return  0
         else:
-            return ( sum_xy - ( sum_x * sum_y ) / num ) / denominator
+            return (sum_xy - (sum_x * sum_y) / num) / denominator
+    #--------------------------------------------------------
+    def get_recommended_movies(self, usrID):
+        sim_k_users = self.__get_k_simUsers(usrID)
+
+        usrID_movies = self.train[usrID].keys() # movies of the user to recommend
+        candidates = dict() # candidate movies; key: 'movID', value: 'value'(<-avg)(<-綜合評價)
+        tmp_count = dict() # in case of diff sim. users have diff values to a same movie
+        usr_i = 0
+        while usr_i < len(sim_k_users):
+            curr_usrID = sim_k_users[usr_i][0] # 相似用戶ID(sorted)
+            curr_r = sim_k_users[usr_i][1] # 該位相似用戶(與usrID)的相似度
+            for movID, rating in self.train[curr_usrID].items():
+                if movID not in usrID_movies:
+                    value =  self.__get_value(curr_r, rating)
+                    if movID not in candidates.keys():
+                        tmp_count[movID] = 1
+                    else:
+                        tmp_count[movID] += 1
+                        n = tmp_count[movID]
+                        old_value = candidates[movID]
+                        value = (value + old_value * n) / (n+1)
+                    candidates[movID] = value
+            usr_i += 1
+        sorted_movies = sorted(candidates.items(), key = lambda x:x[1], reverse=True) #: x[1] <- 'value'(綜合評價)
+        sorted_movies = sorted_movies[:self.n_items] # top n great movies
+        rec_movies = [mov_tuple[0] for mov_tuple in sorted_movies]
+        return rec_movies
     
-    def recommand(self, usrID):
-        movies_of_ursID = self.train[usrID].keys()
+    def __get_value(self, pearson_r, rating): # 綜合評價: 以"用戶間相似度"(-1~+1)及"電影原始評分"(1~5)來估計
+        return pearson_r * rating
         
-        neighbor_users = dict()
-        for user in self.train.keys():
-            if user != usrID:
-                pearson_r = self.pearson(self.train[user], self.train[usrID])
-                neighbor_users[user] = pearson_r
-                print(f"user:{user} pearson_r:{pearson_r}")
-            
-        # 找出前 k_users 位相似的用戶
-        newNU = sorted(neighbor_users.items(), key=lambda x:x[1], reverse=True)[:self.k_users]
-        #print(newNU)
-        rec_movies = set()
-        '''
-        for nu in newNU:
-            if len(rec_movies) >= self.n_items: break
-            user = nu[0] # 0: user / 1: pearson's correlation coefficient
-            #print("user: ", user)
-            movies = self.train[user]
-            for mov in movies:
-                if len(rec_movies) < self.n_items and :
-                    rec_movies.add(mov)
-            #print(*(mov for mov in movies), end="\n\n")
-        print(rec_movies)
-        '''
+    def __get_k_simUsers(self, usrID):
+        similar_users = dict() # key: usrID, value: Pearson's r (r)
+        for curr_usrID in self.train.keys():
+            if curr_usrID != usrID:
+                rating1 = self.train[curr_usrID]
+                rating2 = self.train[usrID]
+                r = self.get_pearson_r(rating1, rating2)
+                if r > 0.5: # bias(->adjustable)
+                    similar_users.setdefault(curr_usrID, r)
+        sim_k_users = sorted(similar_users.items(), key=lambda x:x[1], reverse=True)
+        sim_k_users = sim_k_users[:self.k_users] # top k similar users
+        return sim_k_users
+    
 if __name__ == "__main__":
     """
     <population>
@@ -162,7 +175,7 @@ if __name__ == "__main__":
     """
     file_path = "data/training set"
     seed = 30
-    k_users = 15 # 最相鄰(相似)的前 15 用戶
+    k_users = 15 # 最相似 的前 15 用戶
     n_items = 20 # 為每位用戶推薦的電影數
     ''' <Observation>
         #E.g., test_num:        100  ->  500 
@@ -173,30 +186,13 @@ if __name__ == "__main__":
     #rec = FirstRec(file_path, seed, k_users, n_items, test_num) # for test 
     rec = FirstRec(file_path, seed, k_users, n_items)
     
-    # 計算用户 userID_1 和 userID_2 的皮爾森相關係數
+    # 計算用戶 userID_1 和 userID_2 的皮爾遜相關係數
     #userID = "7106"; userID_2 = "2317930" 
     userID = "195100"; userID_2 = "1547579" 
     
-    r = rec.pearson(rec.train[userID], rec.train[userID_2])
-    print("用戶\'{}\' 和 用戶\'{}\'的皮爾森相關係數 r = {:.2f}\n".format(userID, userID_2, r))
-    """
-    A = set(rec.train[userID].keys())
-    B = set(rec.train[userID_2].keys())
-    A_and_B = A.intersection(B)
-    print("A_and_B:", A_and_B, end="\n\n")
-
-    print("user_1:")
-    u = []
-    for k, v in rec.train[userID].items():
-        if k in A_and_B:
-            u.append(f"{k}: {v}")
-    print(sorted(u), end="\n\n")
-    print("user_2:")
-    for k, v in rec.train[userID_2].items():
-        if k in A_and_B:
-            u.append(f"{k}: {v}")
-    print(sorted(u), end="\n\n")
-    """
+    r = rec.get_pearson_r(rec.train[userID], rec.train[userID_2])
+    print('用戶 \"{}\" 和 用戶 \"{}\" 的相關係數 r = {:.2f}\n'.format(userID, userID_2, r))
+    
     userID = "301766"
-    print(f"為用戶{userID}推薦的電影:")
-    rec.recommand("301766")
+    rec_movies = rec.get_recommended_movies("301766")
+    print(f'為用戶 \"{userID}\" 推薦的電影(ID):\n{rec_movies}')
