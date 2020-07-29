@@ -2,6 +2,7 @@ import os
 import json
 import random
 import math
+import time 
 
 class FirstRec():
     def __init__(self, file_path, seed, k_users, n_items, test_num=17770):
@@ -162,7 +163,21 @@ class FirstRec():
         sim_k_users = sorted(similar_users.items(), key=lambda x:x[1], reverse=True)
         sim_k_users = sim_k_users[:self.k_users] # top k similar users
         return sim_k_users
-    
+    #--------------------------------------------------------
+    """
+    分析: 為用戶推薦的 (# n_item) 部電影中, 成功預測(存在測試資料集) 的電影比例
+    """
+    def evaluate(self, num=50):
+        random.seed(10)
+        testing_users = random.sample(self.test.keys(), num)
+        accuracy = list()
+        for usrID in testing_users:
+            rec_movies = self.get_recommended_movies(usrID)
+            movies = self.test[usrID].keys()
+            hit_count = len([mov for mov in rec_movies if mov in movies])            
+            accuracy.append(hit_count / self.n_items)
+        return sum(accuracy) / len(accuracy)
+        
 if __name__ == "__main__":
     """
     <population>
@@ -187,12 +202,17 @@ if __name__ == "__main__":
     rec = FirstRec(file_path, seed, k_users, n_items)
     
     # 計算用戶 userID_1 和 userID_2 的皮爾遜相關係數
-    #userID = "7106"; userID_2 = "2317930" 
-    userID = "195100"; userID_2 = "1547579" 
-    
+    userID = "7106"; userID_2 = "2317930" 
+    #userID = "195100"; userID_2 = "1547579"
     r = rec.get_pearson_r(rec.train[userID], rec.train[userID_2])
     print('用戶 \"{}\" 和 用戶 \"{}\" 的相關係數 r = {:.2f}\n'.format(userID, userID_2, r))
     
+    # 為用戶推薦電影
     userID = "301766"
     rec_movies = rec.get_recommended_movies("301766")
-    print(f'為用戶 \"{userID}\" 推薦的電影(ID):\n{rec_movies}')
+    print(f'為用戶 \"{userID}\" 推薦的電影(ID):')
+    print(*(mov for mov in rec_movies), end="\n"*2)
+
+    # 評估模型準確率
+    accuracy = rec.evaluate()
+    print(f"模型準確率為: {accuracy}")
